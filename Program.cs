@@ -1,53 +1,69 @@
-﻿using Azure;
-using Azure.Storage.Blobs;
-using Azure.Storage.Blobs.Models;
-using System;
-using System.IO;
-using System.Reflection.Metadata;
-namespace azureblob
+﻿using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+using Azure.Messaging.ServiceBus;
+using Azure.Identity;
+using Microsoft.Azure.ServiceBus;  //main nuget package.
+using Newtonsoft.Json;
+using Azure.Messaging.ServiceBus.Administration;
+
+
+namespace PubSub
 {
-    internal class Program
+    class UserMessage
+    {
+
+        public string id { get; set; }
+        public string message { get; set; }
+    }
+
+    class AzureConnect
+    {
+        private ITopicClient topicClient;
+        public async Task connectToService(string url,string Topic)
+        {
+            var adminClient = new ServiceBusAdministrationClient(url);
+            if (!await adminClient.TopicExistsAsync(Topic))
+            {
+                await adminClient.CreateTopicAsync(Topic);
+                Console.WriteLine($"Topic '{Topic}' created successfully.");
+            }
+            
+            topicClient = new TopicClient(url, Topic);
+            
+
+        }
+        public async Task CretaeMessage(string msg)
+        {
+            if(topicClient == null)
+            {
+                Console.WriteLine("empty");
+                return;
+            }
+            UserMessage usermessage = new UserMessage();
+            string guid = Guid.NewGuid().ToString();
+            usermessage.id = guid;
+            usermessage.message = msg;
+
+            string serializeMsg = JsonConvert.SerializeObject(usermessage);
+            var message = new Message(Encoding.UTF8.GetBytes(serializeMsg));
+            await topicClient.SendAsync(message);
+
+        }
+    }
+    class Program
     {
         static async Task Main(string[] args)
         {
-            var connstring = "DefaultEndpointsProtocol=https;AccountName=blobstoragetask123;AccountKey=X1j9LLAqTwr0703FqHpCaOeZdy27x2mvu9yulgFHAmOzdHis+DkVmbufd4HELPtXh8sWczLY9MvG+AStXR3Kpw==;EndpointSuffix=core.windows.net";
-            var containername = "chunkfileupload";
-            var container = new BlobContainerClient(connstring, containername);
-
-
-            int i = 0;
-
-            int chunksize = 1 * 1024 * 1024;
-
-            using (var stream = File.OpenRead("file.mp4"))
-            {
+                AzureConnect conn = new AzureConnect();
+                await conn.connectToService("Endpoint=sb://mysamplebus1.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=f6VKQJgywzQn30moDBtCNgNKPgZKyA/2m+ASbI9Ob18=", "testtopic");
                 
-                long fileSize = stream.Length;
-                long uploadedBytes = 0;
-                while (uploadedBytes < fileSize)
-                {
-                    var blob = container.GetBlobClient($"file{i}.mp4");  //generating a blob client
-                    Console.WriteLine(blob);
-                    
-                    var remainingBytes = fileSize - uploadedBytes;
-                    var bytesToRead = Math.Min(chunksize, remainingBytes);  //1-cunk size  2-chunck size  3-remaining bytes
+                //generate uuid
+                await conn.CretaeMessage("new request");
 
-                    byte[] buffer = new byte[bytesToRead];  //data will be stored at here
-                    int bytesRead = await stream.ReadAsync(buffer, 0, buffer.Length);  //no of bytes read from stream
-                    
-                    using (var memoryStream = new MemoryStream(buffer, 0, bytesRead))  //(data array,starts from,end till)
-                    {
-                        await blob.UploadAsync(memoryStream, true);
-                       
-                        uploadedBytes += bytesRead;
-                        Console.WriteLine($"Uploaded {uploadedBytes} bytes of {fileSize} bytes");
-                    }
-                    i++;
-                }
-                
-                    
-                
-            }
+            
         }
     }
 }
